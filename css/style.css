@@ -1,155 +1,75 @@
 body {
-        background-color: #f7f7f7;
-      }
-      .container {
-        padding: 24px;
-        background-color: white;
-        border-radius: 12px;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
-      }
-      .input-style {
-        border: 1px solid #ccc;
-        padding: 8px 12px;
-        border-radius: 8px;
-        margin-top: 4px;
-        transition: border-color 0.2s;
-      }
-      .input-style:focus {
-        border-color: #4ade80; /* green-400 */
-        outline: none;
-        box-shadow: 0 0 0 2px rgba(74, 222, 128, 0.5);
-      }
+    background-color: #f8fafc;
+    font-family: 'Inter', sans-serif;
+}
 
-      /* Estilos do Cabeçalho */
-      .header-bg {
-        background-color: #d1fae5; /* green-100 */
-        padding: 30px;
-        border-radius: 15px;
-        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
-      }
-      .header-title {
-        font-size: 2.5rem;
-        font-weight: 800; /* extra-bold */
-        color: #065f46; /* green-800 */
-        margin-bottom: 0.5rem;
-      }
-      .header-subtitle {
-        color: #10b981; /* green-500 */
-        font-weight: 500;
-        font-size: 1.125rem;
-      }
-      .main-button {
-        background-color: #10b981; /* green-500 */
-        color: white;
-      }
-      .main-button:hover {
-        background-color: #059669; /* green-600 */
-      }
-      
-      /* Estilos da Navegação (Menu) */
-      .nav-menu button {
-        background-color: #fff;
-        color: #374151; /* gray-700 */
-        padding: 10px 20px;
-        border-radius: 20px;
-        font-weight: 600;
-        border: 2px solid #e5e7eb;
-        transition: all 0.2s;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
-      }
-      .nav-menu button:hover {
-        border-color: #10b981; /* green-500 */
-        color: #10b981;
-      }
-      .nav-menu button.active {
-        background-color: #10b981; /* green-500 */
-        color: white;
-        border-color: #059669; /* green-600 */
-        box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.4);
-      }
-      .nav-menu button .emoji-icon {
-        font-size: 1.1rem;
-      }
+.header-bg {
+    background: linear-gradient(135deg, #d1fae5 0%, #bbf7d0 100%);
+    border-radius: 24px;
+    padding: 40px;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);
+}
 
-      /* Estilos de Seções e Títulos */
-      .section-title {
-        font-size: 1.75rem; /* text-2xl */
-        font-weight: 700; /* bold */
-        color: #1f2937; /* gray-800 */
-      }
-      .section-title .emoji-icon {
-        font-size: 2rem;
-        line-height: 1;
-        margin-right: 0.25rem;
-      }
-      
-      /* Estilos de Tabela */
-      .table-header {
-        background-color: #ecfdf5; /* green-50 */
-        color: #065f46; /* green-800 */
-        font-size: 0.875rem;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-      }
-      .table-row-hover:hover {
-        background-color: #f0fdf4; /* green-50 */
-        transform: scale(1.005);
-      }
-      .profit-text {
-        color: #16a34a; /* green-600 */
-        font-weight: 600;
-      }
-      .loss-text {
-        color: #dc2626; /* red-600 */
-        font-weight: 600;
-      }
+.container-card {
+    background: white;
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    border: 1px solid #f1f5f9;
+    margin-bottom: 24px;
+}
 
-      /* Estilos de Cartões de Resumo */
-      .summary-card {
-        padding: 20px;
-        border-radius: 10px;
-        text-align: center;
-        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
-      }
-      .summary-card.bg-green-100 {
-        border: 2px solid #dcfce7;
-        color: #065f46;
-      }
-      .summary-card.bg-red-100 {
-        border: 2px solid #fee2e2;
-        color: #991b1b;
-      }
-      .summary-card.bg-yellow-100 {
-        border: 2px solid #fef3c7;
-        color: #92400e;
-      }
+.nav-button {
+    padding: 10px 20px;
+    border-radius: 12px;
+    background: white;
+    border: 1px solid #e2e8f0;
+    transition: all 0.3s;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
 
-      /* Estilos de Alerta */
-      .alert {
-        padding: 12px 20px;
-        border-radius: 8px;
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        font-weight: 600;
-      }
-      .alert-error {
-        background-color: #fef2f2; /* red-50 */
-        color: #b91c1c; /* red-700 */
-        border: 1px solid #fca5a5; /* red-300 */
-      }
-      .alert .emoji-icon {
-        font-size: 1.5rem;
-      }
+.nav-button.active {
+    background: #10b981;
+    color: white;
+    border-color: #059669;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
 
-      /* Animações */
-      @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(-10px); }
-        to { opacity: 1; transform: translateY(0); }
-      }
-      .animate-fadeIn {
-        animation: fadeIn 0.5s ease-out;
-      }
+.input-style {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 12px;
+    width: 100%;
+    transition: border-color 0.2s;
+}
+
+.input-style:focus {
+    border-color: #10b981;
+    outline: none;
+    ring: 2px rgba(16, 185, 129, 0.2);
+}
+
+.main-button {
+    background: #10b981;
+    color: white;
+    padding: 12px 24px;
+    border-radius: 12px;
+    font-weight: bold;
+    transition: all 0.2s;
+}
+
+.main-button:hover {
+    background: #059669;
+}
+
+.summary-card {
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+}
