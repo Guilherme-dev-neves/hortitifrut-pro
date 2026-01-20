@@ -1,718 +1,232 @@
- <script type="text/babel">
-      const { useState, useEffect, useMemo } = React;
-      // Garante que o jsPDF está acessível globalmente
-      const { jsPDF } = window.jspdf; 
+const { useState, useEffect, useMemo } = React;
 
-      // Funções mock para simular o armazenamento local (se for necessário)
-      const loadFromStorage = (key, defaultValue) => {
-        try {
-          const item = localStorage.getItem(key);
-          return item ? JSON.parse(item) : defaultValue;
-        } catch (error) {
-          console.error(`Erro ao carregar ${key} do LocalStorage:`, error);
-          return defaultValue;
-        }
-      };
+const App = () => {
+    // --- PERSISTÊNCIA ---
+    const load = (k, d) => { try { const i = localStorage.getItem(k); return i ? JSON.parse(i) : d; } catch { return d; } };
+    const [abaAtiva, setAbaAtiva] = useState(load('abaAtiva', 'resumo'));
+    const [entradas, setEntradas] = useState(load('entradas', []));
+    const [vendas, setVendas] = useState(load('vendas', []));
+    const [perdas, setPerdas] = useState(load('perdas', []));
 
-      const saveToStorage = (key, value) => {
-        try {
-          localStorage.setItem(key, JSON.stringify(value));
-        } catch (error) {
-          console.error(`Erro ao salvar ${key} no LocalStorage:`, error);
-        }
-      };
+    // Estados dos Formulários
+    const [produto, setProduto] = useState('');
+    const [custo, setCusto] = useState('');
+    const [quantidade, setQuantidade] = useState('');
+    const [tipo, setTipo] = useState('Unidade');
+    const [vendaProduct, setVendaProduct] = useState('');
+    const [vendaQty, setVendaQty] = useState('');
+    const [vendaPrice, setVendaPrice] = useState('');
+    const [perdaProduct, setPerdaProduct] = useState('');
+    const [perdaQty, setPerdaQty] = useState('');
 
-      // Componente Principal
-      const App = () => {
-        const [abaAtiva, setAbaAtiva] = useState(loadFromStorage('abaAtiva', 'resumo'));
+    useEffect(() => {
+        localStorage.setItem('entradas', JSON.stringify(entradas));
+        localStorage.setItem('vendas', JSON.stringify(vendas));
+        localStorage.setItem('perdas', JSON.stringify(perdas));
+        localStorage.setItem('abaAtiva', JSON.stringify(abaAtiva));
+    }, [entradas, vendas, perdas, abaAtiva]);
 
-        // ESTADOS DE ENTRADAS/COMPRAS
-        const [entradas, setEntradas] = useState(loadFromStorage('entradas', []));
-        const [produto, setProduto] = useState('');
-        const [custo, setCusto] = useState('');
-        const [quantidade, setQuantidade] = useState('');
-        const [tipo, setTipo] = useState('unid');
+    // --- CÁLCULOS ---
+    const produtosLista = useMemo(() => [...new Set(entradas.map(e => e.product))].sort(), [entradas]);
 
-        // ESTADOS DE VENDAS
-        const [vendas, setVendas] = useState(loadFromStorage('vendas', []));
-        const [vendaProduct, setVendaProduct] = useState('');
-        const [vendaQty, setVendaQty] = useState('');
-        const [vendaPrice, setVendaPrice] = useState('');
-
-        // ESTADOS DE PERDAS
-        const [perdas, setPerdas] = useState(loadFromStorage('perdas', []));
-        const [perdaProduct, setPerdaProduct] = useState('');
-        const [perdaQty, setPerdaQty] = useState('');
-        const [perdaMotivo, setPerdaMotivo] = useState('');
-
-        // Efeito para salvar estados no LocalStorage
-        useEffect(() => {
-          saveToStorage('entradas', entradas);
-        }, [entradas]);
-
-        useEffect(() => {
-          saveToStorage('vendas', vendas);
-        }, [vendas]);
-        
-        useEffect(() => {
-          saveToStorage('perdas', perdas);
-        }, [perdas]);
-
-        useEffect(() => {
-          saveToStorage('abaAtiva', abaAtiva);
-        }, [abaAtiva]);
-
-
-        // --- LÓGICA DE CÁLCULO CENTRAL (Resumo, Estoque, Custos) ---
-
-        // Lista de produtos únicos para dropdowns
-        const produtosLista = useMemo(() => {
-          const lista = new Set(entradas.map(e => e.product));
-          vendas.forEach(v => lista.add(v.product));
-          perdas.forEach(p => lista.add(p.product));
-          return Array.from(lista).sort();
-        }, [entradas, vendas, perdas]);
-
-        // Função para calcular o custo médio e estoque atual de cada produto
-        const calculateSummary = useMemo(() => {
-          const summary = {};
-
-          // 1. Processar Entradas (Cálculo de Custo Médio e Estoque Base)
-          entradas.forEach(e => {
-            const qty = parseFloat(e.qty);
-            const cost = parseFloat(e.cost);
-            const totalCost = qty * cost;
-
-            if (!summary[e.product]) {
-              summary[e.product] = { 
-                estoque: 0, 
-                totalCusto: 0, 
-                lucro: 0, 
-                custoVendido: 0,
-                custoPerdido: 0,
-                tipo: e.tipo
-              };
+    const calculateSummary = useMemo(() => {
+        const s = {};
+        entradas.forEach(e => {
+            if (!s[e.product]) s[e.product] = { estoque: 0, totalCusto: 0, lucro: 0, custoPerdas: 0, tipo: e.tipo };
+            s[e.product].estoque += parseFloat(e.qty);
+            s[e.product].totalCusto += (parseFloat(e.qty) * parseFloat(e.cost));
+        });
+        vendas.forEach(v => {
+            if (s[v.product]) {
+                const totalEntrado = entradas.filter(ent => ent.product === v.product).reduce((a, b) => a + b.qty, 0);
+                const cMedio = s[v.product].totalCusto / (totalEntrado || 1);
+                s[v.product].estoque -= parseFloat(v.qty);
+                s[v.product].lucro += (parseFloat(v.price) - (parseFloat(v.qty) * cMedio));
             }
-
-            // Cálculo do Custo Médio Ponderado (AVCO - Average Cost)
-            const currentStock = summary[e.product].estoque;
-            const currentTotalCost = summary[e.product].totalCusto;
-            
-            const newTotalCost = currentTotalCost + totalCost;
-            const newStock = currentStock + qty;
-
-            summary[e.product].estoque = newStock;
-            summary[e.product].totalCusto = newTotalCost;
-            summary[e.product].custo = newStock > 0 ? newTotalCost / newStock : 0;
-            summary[e.product].tipo = e.tipo; 
-          });
-
-          // 2. Processar Vendas (Reduz Estoque e Calcula Lucro)
-          vendas.forEach(v => {
-            const qty = parseFloat(v.qty);
-            const price = parseFloat(v.price);
-            const product = v.product;
-
-            if (summary[product]) {
-              // Obtém o Custo Médio atual (Custo dos Bens Vendidos - COGS)
-              const avgCost = summary[product].custo || 0; 
-              
-              // Se não houver estoque (caso de estoque negativo), ainda usa o último custo médio
-              const costOfGoodsSold = qty * avgCost; 
-              const revenue = qty * price;
-              const profit = revenue - costOfGoodsSold;
-
-              summary[product].estoque -= qty;
-              summary[product].lucro += profit;
-              summary[product].custoVendido += costOfGoodsSold;
-              
-              // Se o estoque for negativo, ajusta o totalCusto (embora tecnicamente o AVCO não se ajuste aqui)
-              // Para fins de simplificação, só ajustamos o estoque e lucro.
-              if(summary[product].estoque >= 0) {
-                 summary[product].totalCusto -= costOfGoodsSold;
-              }
+        });
+        perdas.forEach(p => {
+            if (s[p.product]) {
+                const totalEntrado = entradas.filter(ent => ent.product === p.product).reduce((a, b) => a + b.qty, 0);
+                const cMedio = s[p.product].totalCusto / (totalEntrado || 1);
+                s[p.product].estoque -= parseFloat(p.qty);
+                s[p.product].custoPerdas += (parseFloat(p.qty) * cMedio);
             }
-          });
+        });
+        return Object.keys(s).map(p => ({ name: p, ...s[p], custoMedio: s[p].totalCusto / (entradas.filter(ent => ent.product === p).reduce((a, b) => a + b.qty, 0) || 1) }));
+    }, [entradas, vendas, perdas]);
 
-          // 3. Processar Perdas (Reduz Estoque e Calcula Custo Perdido)
-          perdas.forEach(p => {
-            const qty = parseFloat(p.qty);
-            const product = p.product;
+    const totals = useMemo(() => calculateSummary.reduce((a, b) => ({
+        estoque: a.estoque + b.estoque,
+        lucro: a.lucro + b.lucro,
+        perdas: a.perdas + b.custoPerdas
+    }), { estoque: 0, lucro: 0, perdas: 0 }), [calculateSummary]);
 
-            if (summary[product]) {
-              const avgCost = summary[product].custo || 0;
-              const costOfLoss = qty * avgCost;
+    // --- FUNÇÃO PDF ---
+    const gerarPDF = () => {
+        const doc = new jspdf.jsPDF();
+        doc.setFontSize(20);
+        doc.text("Relatório Hortifruti Pro", 14, 22);
+        doc.setFontSize(11);
+        doc.text(`Data: ${new Date().toLocaleDateString('pt-BR')}`, 14, 30);
 
-              summary[product].estoque -= qty;
-              summary[product].custoPerdido += costOfLoss;
-              
-              // Reduz o totalCusto do estoque
-              if(summary[product].estoque >= 0) {
-                 summary[product].totalCusto -= costOfLoss;
-              }
-            }
-          });
-
-          // Converte o objeto em um array
-          return Object.keys(summary).map(product => ({
-            product,
-            ...summary[product],
-            custo: summary[product].custo || 0 // Garante que o custo seja 0 se for NaN
-          }));
-        }, [entradas, vendas, perdas]);
-
-
-        // CÁLCULOS TOTAIS
-        const totals = useMemo(() => {
-          let lucro = 0;
-          let estoque = 0;
-          calculateSummary.forEach(s => {
-            lucro += s.lucro;
-            // Apenas estoque positivo contribui para o total de unidades
-            if (s.estoque > 0) {
-              estoque += s.estoque; 
-            }
-          });
-          return { lucro, estoque };
-        }, [calculateSummary]);
-
-        // Custo total perdido (soma de todos os produtos)
-        const custoTotalPerdidoGeral = useMemo(() => {
-            return calculateSummary.reduce((sum, s) => sum + s.custoPerdido, 0);
-        }, [calculateSummary]);
-        
-        // Custo total vendido (soma de todos os produtos)
-        const custoTotalVendidoGeral = useMemo(() => {
-            return calculateSummary.reduce((sum, s) => sum + s.custoVendido, 0);
-        }, [calculateSummary]);
-
-        // Verifica se há estoque negativo
-        const showNegativeStockAlert = useMemo(() => {
-          return calculateSummary.some(s => s.estoque < 0);
-        }, [calculateSummary]);
-        
-        
-        // --- FUNÇÕES DE AÇÃO ---
-
-        // Ações de Entradas
-        const addEntrada = () => {
-          if (produto && custo && quantidade) {
-            const newEntrada = {
-              id: Date.now(),
-              date: new Date().toLocaleDateString('pt-BR'),
-              product: produto,
-              cost: parseFloat(custo),
-              qty: parseFloat(quantidade),
-              tipo: tipo
-            };
-            setEntradas([...entradas, newEntrada]);
-            setProduto('');
-            setCusto('');
-            setQuantidade('');
-          }
-        };
-
-        const deleteEntrada = (id) => {
-          setEntradas(entradas.filter(e => e.id !== id));
-        };
-
-        // Ações de Vendas
-        const addVenda = () => {
-          if (vendaProduct && vendaQty && vendaPrice) {
-            const newVenda = {
-              id: Date.now(),
-              date: new Date().toLocaleDateString('pt-BR'),
-              product: vendaProduct,
-              qty: parseFloat(vendaQty),
-              price: parseFloat(vendaPrice)
-            };
-            setVendas([...vendas, newVenda]);
-            setVendaProduct('');
-            setVendaQty('');
-            setVendaPrice('');
-          }
-        };
-
-        const deleteVenda = (id) => {
-          setVendas(vendas.filter(v => v.id !== id));
-        };
-
-        // Ações de Perdas
-        const addPerda = () => {
-          if (perdaProduct && perdaQty) {
-            const newPerda = {
-              id: Date.now(),
-              date: new Date().toLocaleDateString('pt-BR'),
-              product: perdaProduct,
-              qty: parseFloat(perdaQty),
-              motivo: perdaMotivo || 'Não especificado',
-            };
-            setPerdas([...perdas, newPerda]);
-            setPerdaProduct('');
-            setPerdaQty('');
-            setPerdaMotivo('');
-          }
-        };
-
-        const deletePerda = (id) => {
-          setPerdas(perdas.filter(p => p.id !== id));
-        };
-        
-        // --- GERAÇÃO DE PDF ---
-        const generateTextPDF = () => {
-          if (typeof jsPDF === 'undefined') {
-              alert('Erro: jsPDF não está carregado corretamente.');
-              return;
-          }
-
-          const doc = new jsPDF();
-          let y = 20;
-
-          const addText = (text, x, size, style = 'normal', color = '#000000') => {
-            doc.setFontSize(size);
-            doc.setTextColor(color);
-            doc.setFont("helvetica", style); 
-            doc.text(text, x, y);
-            y += size * 0.5;
-          };
-          
-          const drawLine = () => {
-            doc.setDrawColor('#cccccc');
-            doc.line(10, y, 200, y);
-            y += 5;
-          };
-
-          addText("Relatório de Gestão Hortifruti Pro 🥦", 10, 18, 'bold', '#065f46');
-          addText(`Data de Geração: ${new Date().toLocaleDateString('pt-BR')}`, 10, 10, 'normal', '#6b7280');
-          y += 10;
-          
-          drawLine();
-          
-          // --- Resumo Financeiro ---
-          addText("RESUMO FINANCEIRO GERAL", 10, 14, 'bold', '#1f2937');
-          y += 5;
-
-          const lucroText = totals.lucro.toFixed(2);
-          const lucroColor = totals.lucro >= 0 ? '#16a34a' : '#dc2626';
-
-          addText(`Lucro Líquido Total: R$ ${lucroText}`, 10, 12, 'bold', lucroColor);
-          addText(`Custo Total Perdido: R$ ${custoTotalPerdidoGeral.toFixed(2)}`, 10, 12, 'normal', '#991b1b');
-          addText(`Estoque Total (Unidades Estimadas): ${totals.estoque.toFixed(2)}`, 10, 12, 'normal', '#92400e');
-          y += 5;
-          
-          drawLine();
-
-          // --- Detalhe por Produto ---
-          addText("DETALHAMENTO POR PRODUTO", 10, 14, 'bold', '#1f2937');
-          y += 5;
-
-          const startY = y;
-          const headers = ["Produto", "Custo Médio", "Estoque Atual", "Lucro/Prejuízo"];
-          const data = calculateSummary.sort((a, b) => b.estoque - a.estoque).map(s => ([
-            s.product,
-            `R$ ${s.custo.toFixed(2)}/${s.tipo}`,
-            `${s.estoque.toFixed(2)} ${s.tipo}`,
+        const tableData = calculateSummary.map(s => [
+            s.name, 
+            `R$ ${s.custoMedio.toFixed(2)}`, 
+            `${s.estoque.toFixed(2)} ${s.tipo}`, 
             `R$ ${s.lucro.toFixed(2)}`
-          ]));
-          
-          if (typeof doc.autoTable === 'function') {
-            doc.autoTable({
-                startY: startY,
-                head: [headers],
-                body: data,
-                styles: { fontSize: 10, cellPadding: 2, overflow: 'linebreak' },
-                headStyles: { fillColor: [236, 253, 245], textColor: [6, 95, 70], fontStyle: 'bold' },
-                columnStyles: {
-                    1: { halign: 'right' },
-                    2: { halign: 'right' },
-                    3: { halign: 'right' }
-                }
-            });
-            
-            y = doc.autoTable.previous.finalY + 10;
-          } else {
-             addText("Erro: O plugin de tabela não foi carregado.", 10, 10, 'normal', '#ff0000');
-             y = startY + 10;
-          }
+        ]);
 
-          
-          drawLine();
-          
-          // --- Histórico de Perdas ---
-          addText("TOP 5 PERDAS RECENTES", 10, 14, 'bold', '#1f2937');
-          y += 5;
-          
-          const perdasData = perdas
-              .sort((a, b) => b.id - a.id)
-              .slice(0, 5)
-              .map(p => ([
-                  p.date,
-                  p.product,
-                  p.qty,
-                  p.motivo
-              ]));
-          
-          if (typeof doc.autoTable === 'function') {
-            doc.autoTable({
-                startY: y,
-                head: [['Data', 'Produto', 'Qtd Perdida', 'Motivo']],
-                body: perdasData.length > 0 ? perdasData : [['Nenhuma perda registrada.', '', '', '']],
-                styles: { fontSize: 10, cellPadding: 2, overflow: 'linebreak' },
-                headStyles: { fillColor: [254, 202, 202], textColor: [153, 27, 27], fontStyle: 'bold' },
-                columnStyles: {
-                    2: { halign: 'right' }
-                }
-            });
-          }
+        doc.autoTable({
+            startY: 40,
+            head: [['Produto', 'Custo Médio', 'Estoque', 'Lucro']],
+            body: tableData,
+            headStyles: { fillColor: [16, 185, 129] }
+        });
 
+        doc.save('relatorio-hortifruti.pdf');
+    };
 
-          doc.save("Relatorio_HortiGestao.pdf");
-        };
-
-        // --- RENDERIZAÇÃO DE CONTEÚDO POR ABA ---
-        const renderContent = () => {
-          switch (abaAtiva) {
-            case "entradas":
-              return (
-                <div className="space-y-12">
-                  <section className="container animate-fadeIn">
-                    <h2 className="section-title mb-6 flex items-center gap-3">
-                      <span className="emoji-icon text-green-700">🛒</span> Adicionar Nova Compra / Entrada
-                    </h2>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <label className="text-sm">
-                        Produto
-                        <input type="text" className="w-full input-style" placeholder="Ex: Batata Doce" value={produto} onChange={(e) => setProduto(e.target.value)} />
-                      </label>
-                      <label className="text-sm">
-                        Custo Unitário (R$)
-                        <input type="number" min="0" step="0.01" className="w-full input-style" value={custo} onChange={(e) => setCusto(e.target.value)} />
-                      </label>
-                      <label className="text-sm">
-                        Quantidade Comprada
-                        <input type="number" min="0" className="w-full input-style" value={quantidade} onChange={(e) => setQuantidade(e.target.value)} />
-                      </label>
-                      <label className="text-sm">
-                        Tipo/Unidade
-                        <select className="w-full input-style" value={tipo} onChange={(e) => setTipo(e.target.value)}>
-                          <option value="unid">Unidade</option>
-                          <option value="kg">KG</option>
-                          <option value="caixa">Caixa</option>
-                        </select>
-                      </label>
-                    </div>
-                    <div className="mt-6 flex gap-3">
-                      <button className="px-6 py-3 main-button rounded-xl font-bold flex items-center gap-2" onClick={addEntrada}>
-                        <span className="emoji-icon">➕</span> Registrar Entrada
-                      </button>
-                      <button className="px-6 py-3 bg-gray-200 text-gray-800 rounded-xl font-bold transition-transform hover:scale-[1.02]" onClick={() => { setProduto(''); setCusto(''); setQuantidade(''); setTipo('unid'); }}>
-                        Limpar
-                      </button>
-                    </div>
-                  </section>
-
-                  <section className="container animate-fadeIn">
-                    <h2 className="section-title mb-6 flex items-center gap-3">
-                      <span className="emoji-icon text-green-700">📦</span> Histórico de Compras e Entradas
-                    </h2>
-                    <div className="space-y-4 max-h-96 overflow-y-auto pr-2">
-                      {entradas.sort((a, b) => b.id - a.id).map(e => (
-                        <div key={e.id} className="flex justify-between items-center border border-gray-200 p-4 rounded-lg bg-white transition-transform hover:scale-[1.01]">
-                          <div className="flex-1">
-                            <div className="font-semibold text-gray-800">{e.product}</div>
-                            <div className="text-sm text-gray-600">
-                              Custo: R$ {e.cost.toFixed(2)} / {e.tipo} | Qtd: {e.qty} {e.tipo}
-                            </div>
-                          </div>
-                          <div className="text-sm text-gray-500 mr-4">{e.date}</div>
-                          <button className="delete-button bg-red-500 hover:bg-red-600 text-white p-2 rounded-lg shadow-md" onClick={() => deleteEntrada(e.id)}>
-                            <span className="emoji-icon w-5 h-5">🗑️</span>
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </section>
+    // --- TELAS ---
+    const renderContent = () => {
+        if (abaAtiva === 'resumo') return (
+            <div className="animate-fadeIn space-y-8">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="summary-card bg-yellow-50 border-yellow-100 shadow-sm"><p className="text-yellow-700 font-bold mb-1">Estoque Total</p><p className="text-4xl font-black text-yellow-800">{totals.estoque.toFixed(2)}</p></div>
+                    <div className="summary-card bg-emerald-50 border-emerald-100 shadow-sm"><p className="text-emerald-700 font-bold mb-1">Lucro Líquido</p><p className="text-4xl font-black text-emerald-800">R$ {totals.lucro.toFixed(2)}</p></div>
+                    <div className="summary-card bg-red-50 border-red-100 shadow-sm"><p className="text-red-700 font-bold mb-1">Perdas (Custo)</p><p className="text-4xl font-black text-red-800">R$ {totals.perdas.toFixed(2)}</p></div>
                 </div>
-              );
-
-            case "estoque":
-              return (
-                <section className="container animate-fadeIn">
-                  <h2 className="section-title mb-6 flex items-center gap-3">
-                    <span className="emoji-icon text-green-700">📦</span> Controle de Estoque Atual
-                  </h2>
-                  {showNegativeStockAlert && (
-                    <div className="alert alert-error mb-4">
-                      <span className="emoji-icon">⚠️</span>
-                      <span>Alerta de Estoque Negativo: Verifique as entradas de produtos onde o estoque está abaixo de zero.</span>
-                    </div>
-                  )}
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="table-header">
-                        <tr>
-                          <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">Produto</th>
-                          <th className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider">Estoque Atual</th>
-                          <th className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider">Custo Médio</th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {calculateSummary.sort((a, b) => b.estoque - a.estoque).map((s) => (
-                          <tr key={s.product} className="table-row-hover transition duration-150 ease-in-out">
-                            <td className="px-4 py-4 whitespace-nowrap font-medium text-gray-900">{s.product}</td>
-                            <td className={`px-4 py-4 whitespace-nowrap text-center text-sm ${s.estoque < 5 ? 'text-red-500 font-bold' : 'text-green-600'}`}>
-                              {s.estoque.toFixed(2)} {s.tipo} {s.estoque < 5 && <span className="emoji-icon ml-1">🚨</span>}
-                            </td>
-                            <td className="px-4 py-4 whitespace-nowrap text-center text-sm text-gray-600">R$ {s.custo.toFixed(2)} / {s.tipo}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </section>
-              );
-
-            case "vendas":
-              return (
-                <div className="space-y-12">
-                  <section className="container animate-fadeIn">
-                    <h2 className="section-title mb-6 flex items-center gap-3">
-                      <span className="emoji-icon text-green-700">💲</span> Registrar Venda
-                    </h2>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <label className="text-sm">
-                        Produto
-                        <select className="w-full input-style" value={vendaProduct} onChange={(e) => setVendaProduct(e.target.value)}>
-                          <option value="">Selecione</option>
-                          {produtosLista.map((p) => (
-                            <option key={p} value={p}>{p}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="text-sm">
-                        Quantidade Vendida
-                        <input type="number" min="0" className="w-full input-style" value={vendaQty} onChange={(e) => setVendaQty(e.target.value)} />
-                      </label>
-                      <label className="text-sm">
-                        Preço Total da Venda (R$)
-                        <input type="number" min="0" step="0.01" className="w-full input-style" value={vendaPrice} onChange={(e) => setVendaPrice(e.target.value)} />
-                      </label>
-                    </div>
-                    <div className="mt-6 flex gap-3">
-                      <button className="px-6 py-3 main-button rounded-xl font-bold flex items-center gap-2" onClick={addVenda}>
-                        <span className="emoji-icon">✔️</span> Finalizar Venda
-                      </button>
-                      <button className="px-6 py-3 bg-gray-200 text-gray-800 rounded-xl font-bold transition-transform hover:scale-[1.02]" onClick={() => { setVendaProduct(''); setVendaQty(''); setVendaPrice(''); }}>
-                        Limpar
-                      </button>
-                    </div>
-                  </section>
-
-                  <section className="container animate-fadeIn">
-                    <h2 className="section-title mb-6 flex items-center gap-3">
-                      <span className="emoji-icon text-green-700">🧾</span> Histórico de Vendas
-                    </h2>
-                    <div className="space-y-4 max-h-96 overflow-y-auto pr-2">
-                      {vendas.sort((a, b) => b.id - a.id).map(v => (
-                        <div key={v.id} className="flex justify-between items-center border border-gray-200 p-4 rounded-lg bg-white transition-transform hover:scale-[1.01]">
-                          <div className="flex-1">
-                            <div className="font-semibold text-gray-800">{v.product}</div>
-                            <div className="text-sm text-gray-600">
-                              Qtd: {v.qty} | Valor Total: R$ {v.price.toFixed(2)}
-                            </div>
-                          </div>
-                          <div className="text-sm text-gray-500 mr-4">{v.date}</div>
-                          <button className="delete-button bg-red-500 hover:bg-red-600 text-white p-2 rounded-lg shadow-md" onClick={() => deleteVenda(v.id)}>
-                            <span className="emoji-icon w-5 h-5">🗑️</span>
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </section>
-                </div>
-              );
-
-            case "perdas":
-              return (
-                <div className="space-y-12">
-                  <section className="container animate-fadeIn">
-                    <h2 className="section-title mb-6 flex items-center gap-3">
-                      <span className="emoji-icon text-red-700">❌</span> Registrar Perda de Estoque
-                    </h2>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <label className="text-sm">
-                        Produto
-                        <select className="w-full input-style" value={perdaProduct} onChange={(e) => setPerdaProduct(e.target.value)}>
-                          <option value="">Selecione</option>
-                          {produtosLista.map((p) => (
-                            <option key={p} value={p}>
-                              {p}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="text-sm">
-                        Quantidade Perdida
-                        <input type="number" min="0" className="w-full input-style" value={perdaQty} onChange={(e) => setPerdaQty(e.target.value)} />
-                      </label>
-                      <div className="col-span-2">
-                        <label className="text-sm">
-                          Motivo da Perda
-                          <input type="text" className="w-full input-style" placeholder="Ex: Estragou na prateleira" value={perdaMotivo} onChange={(e) => setPerdaMotivo(e.target.value)} />
-                        </label>
-                      </div>
-                    </div>
-                    <div className="mt-6 flex gap-3">
-                      <button className="px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold flex items-center gap-2" onClick={addPerda}>
-                        <span className="emoji-icon">➕</span> Adicionar Perda
-                      </button>
-                      <button className="px-6 py-3 bg-gray-200 text-gray-800 rounded-xl font-bold transition-transform hover:scale-[1.02]" onClick={() => { setPerdaProduct(''); setPerdaQty(''); setPerdaMotivo(''); }}>
-                        Limpar
-                      </button>
-                    </div>
-                  </section>
-                  <section className="container animate-fadeIn">
-                    <h2 className="section-title mb-6 flex items-center gap-3">
-                      <span className="emoji-icon text-red-700">📉</span> Histórico de Perdas
-                    </h2>
-                    <div className="space-y-4 max-h-96 overflow-y-auto pr-2">
-                      {perdas.sort((a, b) => new Date(b.date) - new Date(a.date)).map(p => (
-                        <div key={p.id} className={`flex justify-between items-center border p-4 rounded-lg bg-gray-50 transition-transform hover:scale-[1.01] ${p.motivo.toLowerCase().includes('descarte') || p.motivo.toLowerCase().includes('estrago') ? 'border-red-500 bg-red-50' : 'border-gray-200'}`}>
-                          <div className="flex-1">
-                            <div className="font-semibold text-gray-800">{p.product}</div>
-                            <div className="text-sm text-gray-600">
-                              {p.qty} unidades perdidas. Motivo: <span className="font-medium">{p.motivo || 'N/A'}</span>
-                            </div>
-                          </div>
-                          <div className="text-sm text-gray-500 mr-4">{p.date}</div>
-                          <button className="delete-button bg-red-500 hover:bg-red-600 text-white p-2 rounded-lg shadow-md" onClick={() => deletePerda(p.id)}>
-                            <span className="emoji-icon w-5 h-5">🗑️</span>
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </section>
-                </div>
-              );
-            case "resumo":
-            default:
-              return (
-                <div className="space-y-12">
-                  <section className="container animate-fadeIn">
-                    <h2 className="section-title mb-6 flex items-center gap-3">
-                      <span className="emoji-icon text-green-700">📊</span> Resumo Geral e Performance
-                    </h2>
-                    {showNegativeStockAlert && (
-                      <div className="alert alert-error mb-4">
-                        <span className="emoji-icon">⚠️</span>
-                        <span>Atenção! Alguns produtos estão com estoque negativo. Verifique a seção de estoque para mais detalhes.</span>
-                      </div>
-                    )}
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left rounded-lg overflow-hidden">
-                        <thead className="table-header">
-                          <tr>
-                            <th className="p-4">Produto</th>
-                            <th className="p-4 text-right">Custo Médio</th>
-                            <th className="p-4 text-right">Estoque Atual</th>
-                            <th className="p-4 text-right">Lucro/Prejuízo</th>
-                          </tr>
+                <div className="container-card">
+                    <h2 className="text-2xl font-bold mb-6 text-emerald-900">📊 Visão Geral por Produto</h2>
+                    <table className="w-full text-left">
+                        <thead className="bg-emerald-50 text-emerald-800 uppercase text-xs font-black">
+                            <tr><th className="p-4">Produto</th><th className="p-4 text-center">Custo Médio</th><th className="p-4 text-center">Estoque</th><th className="p-4 text-right">Lucro</th></tr>
                         </thead>
                         <tbody>
-                          {calculateSummary.sort((a, b) => b.estoque - a.estoque).map((s) => (
-                            <tr key={s.product} className="border-b border-gray-200 table-row-hover transition-transform duration-200">
-                              <td className="p-4 font-medium text-gray-700">{s.product}</td>
-                              <td className="p-4 text-right text-gray-700">R$ {s.custo.toFixed(2)}/{s.tipo}</td>
-                              <td className="p-4 text-right">
-                                <span className={s.estoque < 0 ? 'text-red-500 font-bold' : 'text-gray-700'}>
-                                  {s.estoque.toFixed(2)} {s.tipo}
-                                </span>
-                              </td>
-                              <td className="p-4 text-right">
-                                <span className={s.lucro < 0 ? 'loss-text' : 'profit-text'}>R$ {s.lucro.toFixed(2)}</span>
-                              </td>
-                            </tr>
-                          ))}
+                            {calculateSummary.map(s => (
+                                <tr key={s.name} className="border-b">
+                                    <td className="p-4 font-bold">{s.name}</td>
+                                    <td className="p-4 text-center">R$ {s.custoMedio.toFixed(2)}</td>
+                                    <td className="p-4 text-center font-bold">{s.estoque.toFixed(2)}</td>
+                                    <td className={`p-4 text-right font-black ${s.lucro >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>R$ {s.lucro.toFixed(2)}</td>
+                                </tr>
+                            ))}
                         </tbody>
-                      </table>
-                    </div>
-                  </section>
-
-                  <section className="container animate-fadeIn">
-                    <h2 className="section-title mb-6 flex items-center gap-3">
-                      <span className="emoji-icon text-green-700">💰</span> Totais Financeiros
-                    </h2>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                      <div className="summary-card bg-yellow-100 animate-fadeIn">
-                        <div className="text-sm font-semibold mb-2">Estoque Total</div>
-                        <div className="text-4xl font-extrabold">{totals.estoque.toFixed(2)}</div>
-                        <div className="text-xs font-light mt-1 text-gray-600">
-                          *Estimado em unidades
-                        </div>
-                      </div>
-                      <div className={`summary-card ${totals.lucro < 0 ? 'bg-red-100' : 'bg-green-100'} animate-fadeIn`}>
-                        <div className="text-sm font-semibold mb-2">Lucro Líquido</div>
-                        <div className="text-4xl font-extrabold">R$ {totals.lucro.toFixed(2)}</div>
-                        <div className="text-xs font-light mt-1">
-                          {totals.lucro >= 0 ? 'Parabéns pelo sucesso!' : 'Revise seus custos para aumentar o lucro.'}
-                        </div>
-                      </div>
-                      <div className="summary-card bg-red-100 animate-fadeIn">
-                        <div className="text-sm font-semibold mb-2">Prejuízo com Perdas</div>
-                        <div className="text-4xl font-extrabold">R$ {custoTotalPerdidoGeral.toFixed(2)}</div>
-                        <div className="text-xs font-light mt-1">
-                          Este valor impacta diretamente seu lucro.
-                        </div>
-                      </div>
-                    </div>
-                  </section>
+                    </table>
                 </div>
-              );
-          }
-        };
-
-        return (
-          <div className="p-8 max-w-7xl mx-auto">
-            <header className="header-bg flex items-center justify-between mb-12 animate-fadeIn">
-              <div className="flex items-center gap-6">
-                {/* Imagem de logo mantida se o arquivo "foto logo.png" existir no diretório */}
-                <img src="foto logo.png" alt="Logo Hortifruti" className="w-24 h-24 object-contain transform transition-transform duration-500 hover:scale-110" />
-                <div>
-                  <h1 className="header-title">Hortifruti Pro</h1>
-                  <p className="header-subtitle">Gestão Inteligente, Lucro Real.</p>
-                </div>
-              </div>
-              <button onClick={generateTextPDF} className="main-button rounded-full px-8 py-4 flex items-center gap-2 font-bold shadow-xl transition-all duration-300 transform hover:scale-105 hover:rotate-3">
-                <span className="emoji-icon w-7 h-7">📄</span> Gerar Relatório PDF
-              </button>
-            </header>
-
-            <nav className="nav-menu flex justify-center gap-4 mb-12">
-              <button className={abaAtiva === 'resumo' ? 'active' : ''} onClick={() => setAbaAtiva("resumo")}>
-                <span className="emoji-icon">📊</span> Resumo e Totais
-              </button>
-              <button className={abaAtiva === 'entradas' ? 'active' : ''} onClick={() => setAbaAtiva("entradas")}>
-                <span className="emoji-icon">🛒</span> Adicionar Compra
-              </button>
-              <button className={abaAtiva === 'estoque' ? 'active' : ''} onClick={() => setAbaAtiva("estoque")}>
-                <span className="emoji-icon">📦</span> Estoque
-              </button>
-              <button className={abaAtiva === 'vendas' ? 'active' : ''} onClick={() => setAbaAtiva("vendas")}>
-                <span className="emoji-icon">💲</span> Registrar Venda
-              </button>
-              <button className={abaAtiva === 'perdas' ? 'active' : ''} onClick={() => setAbaAtiva("perdas")}>
-                <span className="emoji-icon">🗑️</span> Registrar Perda
-              </button>
-            </nav>
-
-            <main className="space-y-12">
-              {renderContent()}
-            </main>
-          </div>
+            </div>
         );
-      }
 
-      
-      const root = ReactDOM.createRoot(document.getElementById('root'));
-      root.render(<App />);
-    </script>
+        if (abaAtiva === 'entradas') return (
+            <div className="animate-fadeIn space-y-8">
+                <div className="container-card">
+                    <h2 className="text-2xl font-bold mb-6 text-emerald-900 font-black">🛒 Registrar Nova Compra</h2>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <input className="input-style" placeholder="Produto" value={produto} onChange={e=>setProduto(e.target.value)}/>
+                        <input type="number" className="input-style" placeholder="Custo (R$)" value={custo} onChange={e=>setCusto(e.target.value)}/>
+                        <input type="number" className="input-style" placeholder="Quantidade" value={quantidade} onChange={e=>setQuantidade(e.target.value)}/>
+                        <select className="input-style" value={tipo} onChange={e=>setTipo(e.target.value)}><option>Unidade</option><option>KG</option><option>Caixa</option></select>
+                    </div>
+                    <button className="main-button mt-6 w-full" onClick={() => { if(produto&&custo&&quantidade){setEntradas([{id:Date.now(), product:produto, cost:parseFloat(custo), qty:parseFloat(quantidade), tipo, date:new Date().toLocaleDateString('pt-BR')}, ...entradas]); setProduto(''); setCusto(''); setQuantidade('');}}}>➕ Registrar Entrada</button>
+                </div>
+                <div className="container-card">
+                    <h3 className="font-bold mb-4">📜 Histórico de Compras </h3>
+                    {entradas.map(e => (
+                        <div key={e.id} className="flex justify-between items-center p-3 border-b hover:bg-slate-50">
+                            <span>{e.date} - <b>{e.product}</b> ({e.qty} {e.tipo})</span>
+                            <button onClick={() => setEntradas(entradas.filter(x => x.id !== e.id))} className="text-red-500 hover:scale-110">🗑️</button>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        );
+
+        if (abaAtiva === 'vendas') return (
+            <div className="animate-fadeIn space-y-8">
+                <div className="container-card">
+                    <h2 className="text-2xl font-bold mb-6 text-emerald-900 font-black">💲 Registrar Venda</h2>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <select className="input-style" value={vendaProduct} onChange={e=>setVendaProduct(e.target.value)}><option value="">Selecione...</option>{produtosLista.map(p=><option key={p} value={p}>{p}</option>)}</select>
+                        <input type="number" className="input-style" placeholder="Qtd Vendida" value={vendaQty} onChange={e=>setVendaQty(e.target.value)}/>
+                        <input type="number" className="input-style" placeholder="Valor Total (R$)" value={vendaPrice} onChange={e=>setVendaPrice(e.target.value)}/>
+                    </div>
+                    <button className="main-button bg-emerald-500 mt-6 w-full" onClick={()=>{if(vendaProduct&&vendaQty&&vendaPrice){setVendas([{id:Date.now(), product:vendaProduct, qty:parseFloat(vendaQty), price:parseFloat(vendaPrice), date:new Date().toLocaleDateString('pt-BR')}, ...vendas]); setVendaProduct(''); setVendaQty(''); setVendaPrice('');}}}>✔️ Confirmar Venda</button>
+                </div>
+                <div className="container-card">
+                    <h3 className="font-bold mb-4">📜 Histórico de Vendas </h3>
+                    {vendas.map(v => (
+                        <div key={v.id} className="flex justify-between items-center p-3 border-b hover:bg-slate-50">
+                            <span>{v.date} - <b>{v.product}</b> (Qtd: {v.qty} | R$ {v.price.toFixed(2)})</span>
+                            <button onClick={() => setVendas(vendas.filter(x => x.id !== v.id))} className="text-red-500 hover:scale-110">🗑️</button>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        );
+
+        if (abaAtiva === 'perdas') return (
+            <div className="animate-fadeIn space-y-8">
+                <div className="container-card">
+                    <h2 className="text-2xl font-bold mb-6 text-red-900 font-black">🗑️ Registrar Baixa / Perda</h2>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <select className="input-style" value={perdaProduct} onChange={e=>setPerdaProduct(e.target.value)}><option value="">Selecione...</option>{produtosLista.map(p=><option key={p} value={p}>{p}</option>)}</select>
+                        <input type="number" className="input-style" placeholder="Qtd Perdida" value={perdaQty} onChange={e=>setPerdaQty(e.target.value)}/>
+                    </div>
+                    <button className="main-button bg-red-600 mt-6 w-full" onClick={()=>{if(perdaProduct&&perdaQty){setPerdas([{id:Date.now(), product:perdaProduct, qty:parseFloat(perdaQty), date:new Date().toLocaleDateString('pt-BR')}, ...perdas]); setPerdaProduct(''); setPerdaQty('');}}}>⚠️ Registrar Perda</button>
+                </div>
+                <div className="container-card">
+                    <h3 className="font-bold mb-4 text-red-700">📜 Histórico de Perdas</h3>
+                    {perdas.map(p => (
+                        <div key={p.id} className="flex justify-between items-center p-3 border-b hover:bg-slate-50">
+                            <span>{p.date} - <b>{p.product}</b> (Perda: {p.qty})</span>
+                            <button onClick={() => setPerdas(perdas.filter(x => x.id !== p.id))} className="text-red-500 hover:scale-110">🗑️</button>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        );
+
+        if (abaAtiva === 'estoque') return (
+            <div className="animate-fadeIn container-card">
+                <h2 className="text-2xl font-bold mb-6 text-emerald-900 font-black">📦 Estoque Atual</h2>
+                <table className="w-full text-left">
+                    <thead className="bg-emerald-50 text-emerald-800 uppercase text-xs font-black">
+                        <tr><th className="p-4">Produto</th><th className="p-4 text-center">Estoque</th><th className="p-4 text-right">Custo Médio</th></tr>
+                    </thead>
+                    <tbody>
+                        {calculateSummary.map(s => (
+                            <tr key={s.name} className="border-b">
+                                <td className="p-4 font-bold">{s.name}</td>
+                                <td className={`p-4 text-center font-black ${s.estoque < 5 ? 'text-red-500' : 'text-emerald-600'}`}>{s.estoque.toFixed(2)} {s.tipo}</td>
+                                <td className="p-4 text-right text-slate-500">R$ {s.custoMedio.toFixed(2)}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        );
+    };
+
+    return (
+        <div className="max-w-7xl mx-auto p-4 md:p-10">
+            <header className="header-bg flex flex-col md:flex-row items-center justify-between gap-10 mb-12 shadow-xl border-emerald-200">
+                <div className="flex items-center gap-10">
+                    <img src="assets/logo.png" alt="Logo" className="w-48 h-48 object-contain mix-blend-multiply transition-transform hover:scale-110 duration-300" />
+                    <div><h1 className="text-5xl font-black text-emerald-950 tracking-tighter">Hortifruti Pro</h1><p className="text-emerald-800 font-bold text-lg opacity-80 uppercase tracking-widest mt-1">Gestão de Alta Performance</p></div>
+                </div>
+                <button onClick={gerarPDF} className="bg-emerald-700 text-white px-8 py-4 rounded-2xl font-black text-lg flex items-center gap-3 shadow-2xl hover:bg-emerald-800 hover:-translate-y-1 transition-all active:scale-95">
+                    📄 Exportar Relatório PDF
+                </button>
+            </header>
+            <nav className="flex flex-wrap justify-center gap-4 mb-14">
+                <button onClick={() => setAbaAtiva('resumo')} className={`nav-button ${abaAtiva === 'resumo' ? 'active' : ''}`}>📊 Resumo e Totais</button>
+                <button onClick={() => setAbaAtiva('entradas')} className={`nav-button ${abaAtiva === 'entradas' ? 'active' : ''}`}>🛒 Adicionar Compra</button>
+                <button onClick={() => setAbaAtiva('estoque')} className={`nav-button ${abaAtiva === 'estoque' ? 'active' : ''}`}>📦 Estoque</button>
+                <button onClick={() => setAbaAtiva('vendas')} className={`nav-button ${abaAtiva === 'vendas' ? 'active' : ''}`}>💲  Registar Vendas</button>
+                <button onClick={() => setAbaAtiva('perdas')} className={`nav-button ${abaAtiva === 'perdas' ? 'active' : ''}`}>🗑️ Registar Perdas</button>
+            </nav>
+            <main className="pb-20">{renderContent()}</main>
+        </div>
+    );
+};
+
+ReactDOM.render(<App />, document.getElementById('root'));
