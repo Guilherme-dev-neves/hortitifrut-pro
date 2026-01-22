@@ -1,0 +1,21 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Iniciar o Programa",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "program": "${workspaceFolder}\\..\\..\\Downloads\\exercios.js"
+        },
+        {
+            "type": "node-terminal",
+            "name": "Terminal de Depuração de JavaScript",
+            "request": "launch",
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}
